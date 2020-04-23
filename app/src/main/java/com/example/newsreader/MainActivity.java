@@ -2,9 +2,15 @@ package com.example.newsreader;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import android.content.Intent;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
+import android.database.sqlite.SQLiteStatement;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.View;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.ListView;
 
@@ -20,17 +26,26 @@ import java.util.ArrayList;
 public class MainActivity extends AppCompatActivity {
 
     ArrayList<String> title = new ArrayList<String>();
+    ArrayList<String> content = new ArrayList<String>();
+
     ArrayAdapter arrayAdapter ;
+    SQLiteDatabase articlesDB ;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        articlesDB = this.openOrCreateDatabase("Articles", MODE_PRIVATE, null);
+
+        articlesDB.execSQL("CREATE TABLE IF NOT EXISTS articles (id INTEGER PRIMARY KEY, articleId INTEGER, title VARCHAR, content VARCHAR)");
+
+
         DownloadTask task = new DownloadTask();
 
         try {
-            task.execute("https://hacker-news.firebaseio.com/v0/topstories.json?print=pretty");
+            //task.execute("https://hacker-news.firebaseio.com/v0/topstories.json?print=pretty");
         } catch (Exception e){
             e.printStackTrace();
         }
@@ -39,6 +54,36 @@ public class MainActivity extends AppCompatActivity {
         ListView listView = (ListView) findViewById(R.id.listView);
         arrayAdapter = new ArrayAdapter(this, android.R.layout.simple_list_item_1, title);
         listView.setAdapter(arrayAdapter);
+
+        listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                Intent intent = new Intent(getApplicationContext(), ArticleActivity.class);
+                intent.putExtra("content", content.get(position));
+                startActivity(intent);
+            }
+        });
+        updateListView();
+    }
+
+    public void updateListView(){
+        Cursor c = articlesDB.rawQuery("SELECT * FROM articles", null);
+
+        int contentIndex = c.getColumnIndex("content");
+        int titleIndex = c.getColumnIndex("title");
+
+        if (c.moveToFirst()){
+            title.clear();
+            content.clear();
+
+            do {
+                title.add(c.getString(titleIndex));
+                content.add(c.getString(contentIndex));
+            } while (c.moveToNext());
+
+            arrayAdapter.notifyDataSetChanged();
+
+        }
 
     }
 
@@ -74,6 +119,8 @@ public class MainActivity extends AppCompatActivity {
 
                 if (jsonArray.length() < 20)
                     numberOfItems = jsonArray.length();
+
+                articlesDB.execSQL("DELETE FROM articles");
 
                 for (int i = 0 ; i < numberOfItems ; i++){
                     String articleId = jsonArray.getString(i);
@@ -115,6 +162,15 @@ public class MainActivity extends AppCompatActivity {
                         }
 
                         Log.i("HTML", articleContent);
+
+                        String sql = "INSERT INTO articles (articleID, title, content) VALUES (?,?,?) " ;
+                        SQLiteStatement statement = articlesDB.compileStatement(sql);
+                        statement.bindString(1, articleId);
+                        statement.bindString(2, articleTitle);
+                        statement.bindString(3, articleContent);
+
+                        statement.execute();
+
                         // Log.i("Title And URL", articleTitle + " " + articleUrl);
                     }
 
@@ -132,6 +188,12 @@ public class MainActivity extends AppCompatActivity {
 
 
             return null;
+        }
+
+        @Override
+        protected void onPostExecute(String s) {
+            super.onPostExecute(s);
+            updateListView();
         }
     }
 }
